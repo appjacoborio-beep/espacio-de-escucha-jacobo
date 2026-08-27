@@ -341,6 +341,54 @@
     text-align:center;
     padding:20px 0;
   }
+
+  .admin-day-row{
+    width:100%;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    background:none;
+    border:none;
+    border-bottom:1px solid #ece7dd;
+    padding:14px 2px;
+    cursor:pointer;
+    font-family:inherit;
+    font-size:0.95rem;
+    color: var(--ink);
+    text-align:left;
+    text-transform:capitalize;
+  }
+  .admin-day-row:hover{ background:#faf6ee; }
+  .admin-day-row:last-child{ border-bottom:none; }
+  .admin-day-count{
+    background: var(--red);
+    color:#fff;
+    font-size:0.72rem;
+    font-weight:700;
+    min-width:22px;
+    height:22px;
+    line-height:22px;
+    text-align:center;
+    border-radius:11px;
+    padding:0 6px;
+  }
+  .admin-back{
+    background:none;
+    border:none;
+    color: var(--navy);
+    font-weight:700;
+    font-size:0.85rem;
+    cursor:pointer;
+    padding:0 0 14px;
+    font-family:inherit;
+  }
+  .admin-day-title{
+    font-family:'Fraunces', serif;
+    font-size:1.05rem;
+    color: var(--navy-deep);
+    text-transform:capitalize;
+    margin-bottom:10px;
+  }
 </style>
 </head>
 <body>
@@ -495,14 +543,18 @@
     btn.textContent = 'Enviando...';
 
     try {
-      await fetch(SCRIPT_URL + '?' + params.toString(), {
-        method: 'GET',
-        mode: 'no-cors'
-      });
-      form.reset();
-      count.textContent = '0';
-      okMsg.classList.add('show');
+      const r = await fetch(SCRIPT_URL + '?' + params.toString());
+      const txt = (await r.text()).trim();
+      if (txt === 'OK') {
+        form.reset();
+        count.textContent = '0';
+        okMsg.classList.add('show');
+      } else {
+        errMsg.textContent = 'No se pudo guardar tu mensaje (' + txt + '). Intenta de nuevo.';
+        errMsg.classList.add('show');
+      }
     } catch (err) {
+      errMsg.textContent = 'No se pudo enviar tu mensaje. Revisa tu conexión e intenta de nuevo.';
       errMsg.classList.add('show');
     } finally {
       btn.disabled = false;
@@ -563,7 +615,8 @@
         loginError.classList.add('show');
         return;
       }
-      renderLista(data.comentarios || []);
+      comentariosPorDia = agruparPorDia(data.comentarios || []);
+      renderDias();
       localStorage.setItem(LS_KEY, String(data.total || 0));
       adminBadge.classList.remove('show');
       loginOverlay.classList.remove('show');
@@ -583,20 +636,58 @@
     listOverlay.classList.remove('show');
   });
 
-  function renderLista(comentarios) {
-    if (!comentarios.length) {
+  let comentariosPorDia = {};
+  const DIAS = ['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
+  const MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+
+  function formatDiaLargo(diaStr) {
+    const [y, m, d] = diaStr.split('-').map(Number);
+    const dt = new Date(y, m - 1, d); // fecha local, evita el corrimiento de un día por UTC
+    return `${DIAS[dt.getDay()]} ${d} de ${MESES[m - 1]}`;
+  }
+
+  function agruparPorDia(comentarios) {
+    const grupos = {};
+    comentarios.forEach(c => {
+      const dia = (c.fecha || '').substring(0, 10);
+      if (!grupos[dia]) grupos[dia] = [];
+      grupos[dia].push(c);
+    });
+    return grupos;
+  }
+
+  function renderDias() {
+    const dias = Object.keys(comentariosPorDia).sort().reverse();
+    if (!dias.length) {
       listContent.innerHTML = '<p class="admin-empty">Todavía no hay comentarios.</p>';
       return;
     }
-    listContent.innerHTML = comentarios.map(c => `
-      <div class="admin-list-item">
-        <div class="admin-list-meta">
-          <span>${escapeHtml(c.fecha)} · ${escapeHtml(c.sucursal)}</span>
-          <span class="tipo">${escapeHtml(c.tipo)}</span>
-        </div>
-        <div class="admin-list-msg">${escapeHtml(c.mensaje)}</div>
-      </div>
+    listContent.innerHTML = dias.map(dia => `
+      <button class="admin-day-row" data-dia="${dia}">
+        <span>${formatDiaLargo(dia)}</span>
+        <span class="admin-day-count">${comentariosPorDia[dia].length}</span>
+      </button>
     `).join('');
+    listContent.querySelectorAll('.admin-day-row').forEach(btn => {
+      btn.addEventListener('click', () => renderDiaDetalle(btn.dataset.dia));
+    });
+  }
+
+  function renderDiaDetalle(dia) {
+    const items = comentariosPorDia[dia];
+    listContent.innerHTML =
+      '<button class="admin-back" id="volverDias">← Todos los días</button>' +
+      `<div class="admin-day-title">${formatDiaLargo(dia)}</div>` +
+      items.map(c => `
+        <div class="admin-list-item">
+          <div class="admin-list-meta">
+            <span>${escapeHtml((c.fecha || '').substring(11))} · ${escapeHtml(c.sucursal)}</span>
+            <span class="tipo">${escapeHtml(c.tipo)}</span>
+          </div>
+          <div class="admin-list-msg">${escapeHtml(c.mensaje)}</div>
+        </div>
+      `).join('');
+    document.getElementById('volverDias').addEventListener('click', renderDias);
   }
 
   function escapeHtml(str) {
